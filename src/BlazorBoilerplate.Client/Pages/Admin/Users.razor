@@ -1,6 +1,7 @@
 ﻿@page "/admin/users"
 @attribute [Authorize]
 @inject HttpClient Http
+@inject IAuthorizationService AuthorizationService
 @inject IdentityAuthenticationStateProvider authStateProvider
 @inject IMatToaster matToaster
 @inject AppState appState
@@ -27,20 +28,29 @@ else
         </MatTableHeader>
         <MatTableRow Context="UserRow">
             <td>
-                <div style="width:155px;">
-                    <MatIconButton Icon="edit" OnClick="@(() => OpenEditDialog(UserRow.UserId))"></MatIconButton>
-                    <MatIconButton Icon="rotate_right" OnClick="@(() => OpenResetPasswordDialog(UserRow.UserName, UserRow.UserId))"></MatIconButton>
-                    <MatIconButton Icon="delete" OnClick="@(() => OpenDeleteDialog(UserRow.UserId))" Disabled="@(UserRow.UserId == userProfile.UserId)"></MatIconButton>
-                </div>
+                <AuthorizeView Policy="@Policies.IsAdmin" Context="AuthorizeContext">
+                    <div style="width:155px;">
+                        <MatIconButton Icon="edit" OnClick="@(() => OpenEditDialog(UserRow.UserId))"></MatIconButton>
+                        <MatIconButton Icon="rotate_right" OnClick="@(() => OpenResetPasswordDialog(UserRow.UserName, UserRow.UserId))"></MatIconButton>
+                        <MatIconButton Icon="delete" OnClick="@(() => OpenDeleteDialog(UserRow.UserId))" Disabled="@(UserRow.UserId == userProfile.UserId)"></MatIconButton>
+                    </div>
+                </AuthorizeView>
+                <AuthorizeView Policy="@Policies.IsUser" Context="AuthorizeContext">
+                    <div style="width:155px;">
+                        <MatIconButton Icon="edit" Disabled="true"></MatIconButton>
+                        <MatIconButton Icon="rotate_right" OnClick="@(() => OpenResetPasswordDialog(UserRow.UserName, UserRow.UserId))" Disabled="@(UserRow.UserId != userProfile.UserId)"></MatIconButton>
+                        <MatIconButton Icon="delete" OnClick="@(() => OpenDeleteDialog(UserRow.UserId))" Disabled="true"></MatIconButton>
+                    </div>              
+                </AuthorizeView>
             </td>
             <td><div style="width:130px;">@UserRow.UserName</div></td>
             <td>@UserRow.Email</td>
             <td>
                 <MatChipSet>
                     @foreach (var role in @UserRow.Roles)
-                     {
+                        {
                         <MatChip Label="@role"></MatChip>
-                     }                
+                        }
                 </MatChipSet>
             </td>
         </MatTableRow>
@@ -50,20 +60,24 @@ else
 <MatDialog @bind-IsOpen="@createUserDialogOpen">
     <MatDialogTitle>Create User</MatDialogTitle>
     <MatDialogContent>
-        <fieldset>
-            <div class="form-group">
-                <MatTextField @bind-Value="@registerParameters.UserName" Label="User Name" Icon="mail_outline" IconTrailing="true" FullWidth="true" Required="true"></MatTextField>
-            </div>
-            <div class="form-group">
-                <MatTextField @bind-Value="@registerParameters.Email" Label="Email" Icon="mail_outline" IconTrailing="true" FullWidth="true" Required="true"></MatTextField>
-            </div>
-            <div class="form-group">
-                <MatTextField @bind-Value="@registerParameters.Password" Label="Password" Icon="lock_outline" IconTrailing="true" FullWidth="true" Required="true" Type="password"></MatTextField>
-            </div>
-            <div class="form-group">
-                <MatTextField @bind-Value="@registerParameters.PasswordConfirm" Label="Password Confirmation" Icon="lock_outline" IconTrailing="true" FullWidth="true" Required="true" Type="password"></MatTextField>
-            </div>
-        </fieldset>
+        <EditForm Model="@registerParameters" OnValidSubmit="@CreateUserAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset>
+                <div class="form-group">
+                    <MatTextField @bind-Value="@registerParameters.UserName" Label="User Name" Icon="mail_outline" IconTrailing="true" FullWidth="true" Required="true"></MatTextField>
+                </div>
+                <div class="form-group">
+                    <MatTextField @bind-Value="@registerParameters.Email" Label="Email" Icon="mail_outline" IconTrailing="true" FullWidth="true" Required="true"></MatTextField>
+                </div>
+                <div class="form-group">
+                    <MatTextField @bind-Value="@registerParameters.Password" Label="Password" Icon="lock_outline" IconTrailing="true" FullWidth="true" Required="true" Type="password"></MatTextField>
+                </div>
+                <div class="form-group">
+                    <MatTextField @bind-Value="@registerParameters.PasswordConfirm" Label="Password Confirmation" Icon="lock_outline" IconTrailing="true" FullWidth="true" Required="true" Type="password"></MatTextField>
+                </div>
+            </fieldset>
+        </EditForm>
     </MatDialogContent>
     <MatDialogActions>
         <MatButton OnClick="@(e => { createUserDialogOpen = false; })">Cancel</MatButton>
@@ -74,20 +88,24 @@ else
 <MatDialog @bind-IsOpen="@editDialogOpen">
     <MatDialogTitle>Edit User</MatDialogTitle>
     <MatDialogContent>
-        <fieldset>
-            <div class="form-group">
-                <MatTextField @bind-Value="@user.UserName" Label="User Name" Icon="mail_outline" IconTrailing="true" FullWidth="true" Required="true"></MatTextField>
-            </div>
-            <div class="form-group">
-                <MatTextField @bind-Value="@user.Email" Label="Email" Icon="mail_outline" IconTrailing="true" FullWidth="true" Required="true" Type="mail"></MatTextField>
-            </div>
-            <MatChipSet>
-                @foreach (var role in roleSelections.OrderBy(x => x.Name))
-                {
-                    <MatChip Label="@role.Name" LeadingIcon="@( (role.Selected) ? "done" : "")" @onclick="@(()=>UpdateUserRole(role))" />
-                }
-            </MatChipSet>
-        </fieldset>
+        <EditForm Model="@user" OnValidSubmit="@UpdateUserAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset>
+                <div class="form-group">
+                    <MatTextField @bind-Value="@user.UserName" Label="User Name" Icon="mail_outline" IconTrailing="true" FullWidth="true" Required="true"></MatTextField>
+                </div>
+                <div class="form-group">
+                    <MatTextField @bind-Value="@user.Email" Label="Email" Icon="mail_outline" IconTrailing="true" FullWidth="true" Required="true" Type="mail"></MatTextField>
+                </div>
+                <MatChipSet>
+                    @foreach (var role in roleSelections.OrderBy(x => x.Name))
+                    {
+                        <MatChip Label="@role.Name" LeadingIcon="@( (role.Selected) ? "done" : "")" @onclick="@(()=>UpdateUserRole(role))" />
+                    }
+                </MatChipSet>
+            </fieldset>
+        </EditForm>
     </MatDialogContent>
     <MatDialogActions>
         <MatButton OnClick="@(e => { editDialogOpen = false; })">Cancel</MatButton>
@@ -126,14 +144,18 @@ else
 <MatDialog @bind-IsOpen="@resetPasswordDialogOpen">
     <MatDialogTitle>Manual Password Reset for @registerParameters.UserName</MatDialogTitle>
     <MatDialogContent>
-        <fieldset>
-            <div class="form-group">
-                <MatTextField @bind-Value="@registerParameters.Password" Label="Password" Icon="lock_outline" IconTrailing="true" FullWidth="true" Required="true" Type="password"></MatTextField>
-            </div>
-            <div class="form-group">
-                <MatTextField @bind-Value="@registerParameters.PasswordConfirm" Label="Password Confirmation" Icon="lock_outline" IconTrailing="true" FullWidth="true" Required="true" Type="password"></MatTextField>
-            </div>
-        </fieldset>
+        <EditForm Model="@registerParameters" OnValidSubmit="@ResetUserPasswordAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset>
+                <div class="form-group">
+                    <MatTextField @bind-Value="@registerParameters.Password" Label="Password" Icon="lock_outline" IconTrailing="true" FullWidth="true" Required="true" Type="password"></MatTextField>
+                </div>
+                <div class="form-group">
+                    <MatTextField @bind-Value="@registerParameters.PasswordConfirm" Label="Password Confirmation" Icon="lock_outline" IconTrailing="true" FullWidth="true" Required="true" Type="password"></MatTextField>
+                </div>
+            </fieldset>
+        </EditForm>
     </MatDialogContent>
     <MatDialogActions>
         <MatButton OnClick="@(e => { resetPasswordDialogOpen = false; })">Cancel</MatButton>
@@ -142,6 +164,9 @@ else
 </MatDialog>
 
 @code {
+    //Auth documentation
+    //https://docs.microsoft.com/en-us/aspnet/core/security/blazor/?view=aspnetcore-3.0&tabs=visual-studio
+
     int pageSize { get; set; } = 15;
     int currentPage { get; set; } = 0;
 
@@ -172,7 +197,6 @@ else
     {
         await RetrieveUserListAsync();
         await PopulateRoleList();
-
         userProfile = await appState.GetUserProfile();
     }
 
@@ -224,10 +248,10 @@ else
         user = users.Where(x => x.UserId == userId).FirstOrDefault();
         this.deleteUserDialogOpen = true;
     }
-       
+
     protected void UpdateUserRole(roleSelection roleSelectionItem)
     {
-        roleSelectionItem.Selected = !roleSelectionItem.Selected;        
+        roleSelectionItem.Selected = !roleSelectionItem.Selected;
     }
 
     public async Task PopulateRoleList()
@@ -264,7 +288,7 @@ else
             //update the user object's role list with the new selection set
             user.Roles = roleSelections.Where(x => x.Selected == true).Select(x => x.Name).ToList();
 
-            var apiResponse = await Http.PostJsonAsync<ApiResponseDto>("api/Account", user);
+            var apiResponse = await Http.PutJsonAsync<ApiResponseDto>("api/Account", user);
             if (apiResponse.StatusCode == 200)
             {
                 matToaster.Add("User Updated", MatToastType.Success);
@@ -285,6 +309,12 @@ else
     {
         try
         {
+            if (registerParameters.Password != registerParameters.PasswordConfirm)
+            {
+                matToaster.Add("Password Confirmation Failed", MatToastType.Danger, "");
+                return;
+            }
+
             ApiResponseDto apiResponse = await authStateProvider.Create(registerParameters);
             if (apiResponse.StatusCode == 200)
             {

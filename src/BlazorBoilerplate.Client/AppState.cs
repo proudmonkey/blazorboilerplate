@@ -1,8 +1,10 @@
-﻿using System;
-using System.Threading.Tasks;
+﻿using BlazorBoilerplate.Client.Services.Contracts;
+using BlazorBoilerplate.Client.States;
 using BlazorBoilerplate.Shared.Dto;
-using BlazorBoilerplate.Client.Services.Contracts;
+using Microsoft.AspNetCore.Components.Authorization;
 using Newtonsoft.Json;
+using System;
+using System.Threading.Tasks;
 
 namespace BlazorBoilerplate.Client
 {
@@ -10,7 +12,8 @@ namespace BlazorBoilerplate.Client
     {
         public event Action OnChange;
         private readonly IUserProfileApi _userProfileApi;
-        public UserProfileDto UserProfile { get; private set; }
+
+        public UserProfileDto UserProfile { get; set; }
 
         public AppState(IUserProfileApi userProfileApi)
         {
@@ -71,6 +74,20 @@ namespace BlazorBoilerplate.Client
             }
 
             return UserProfile.Count;
+        }
+
+        public async Task SaveLastVisitedUri(string uri)
+        {
+            if (UserProfile ==  null)
+            {
+                UserProfile = await GetUserProfile();
+            }
+            if (UserProfile != null)
+            {
+                UserProfile.LastPageVisited = uri;
+                await UpdateUserProfile();
+                NotifyStateChanged();
+            }
         }
 
         private void NotifyStateChanged() => OnChange?.Invoke();

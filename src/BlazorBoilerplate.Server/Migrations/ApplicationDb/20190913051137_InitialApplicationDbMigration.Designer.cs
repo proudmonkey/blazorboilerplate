@@ -7,17 +7,17 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace BlazorBoilerplate.Server.Migrations
+namespace BlazorBoilerplate.Server.Migrations.ApplicationDb
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20190824003914_BlazorBoilerplate")]
-    partial class BlazorBoilerplate
+    [Migration("20190913051137_InitialApplicationDbMigration")]
+    partial class InitialApplicationDbMigration
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "3.0.0-preview8.19405.11")
+                .HasAnnotation("ProductVersion", "3.0.0-preview9.19423.6")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128)
                 .HasAnnotation("SqlServer:ValueGenerationStrategy", SqlServerValueGenerationStrategy.IdentityColumn);
 
@@ -96,6 +96,10 @@ namespace BlazorBoilerplate.Server.Migrations
                         .HasColumnType("nvarchar(64)")
                         .HasMaxLength(64);
 
+                    b.Property<string>("FullName")
+                        .HasColumnType("nvarchar(64)")
+                        .HasMaxLength(64);
+
                     b.Property<string>("LastName")
                         .HasColumnType("nvarchar(64)")
                         .HasMaxLength(64);
@@ -146,6 +150,34 @@ namespace BlazorBoilerplate.Server.Migrations
                     b.ToTable("AspNetUsers");
                 });
 
+            modelBuilder.Entity("BlazorBoilerplate.Server.Models.Message", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasAnnotation("SqlServer:ValueGenerationStrategy", SqlServerValueGenerationStrategy.IdentityColumn);
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserID")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("When")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserID");
+
+                    b.ToTable("Messages");
+                });
+
             modelBuilder.Entity("BlazorBoilerplate.Server.Models.Todo", b =>
                 {
                     b.Property<long>("Id")
@@ -159,7 +191,7 @@ namespace BlazorBoilerplate.Server.Migrations
                     b.Property<DateTime>("CreatedOn")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GetUtcDate()");
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("IsCompleted")
                         .HasColumnType("bit");
@@ -173,7 +205,7 @@ namespace BlazorBoilerplate.Server.Migrations
                     b.Property<DateTime>("ModifiedOn")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GetUtcDate()");
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -352,6 +384,15 @@ namespace BlazorBoilerplate.Server.Migrations
                     b.HasOne("BlazorBoilerplate.Server.Models.ApplicationUser", null)
                         .WithMany("ApiLogItems")
                         .HasForeignKey("ApplicationUserId");
+                });
+
+            modelBuilder.Entity("BlazorBoilerplate.Server.Models.Message", b =>
+                {
+                    b.HasOne("BlazorBoilerplate.Server.Models.ApplicationUser", "Sender")
+                        .WithMany("Messages")
+                        .HasForeignKey("UserID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("BlazorBoilerplate.Server.Models.UserProfile", b =>

@@ -5,10 +5,10 @@ using BlazorBoilerplate.Server.Models;
 using BlazorBoilerplate.Server.Services;
 using BlazorBoilerplate.Shared.AuthorizationDefinitions;
 using BlazorBoilerplate.Shared.Dto;
+using IdentityModel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
@@ -25,9 +25,7 @@ namespace BlazorBoilerplate.Server.Controllers
     {
         private static readonly UserInfoDto LoggedOutUser = new UserInfoDto { IsAuthenticated = false, Roles = new List<string>() };
 
-        // Logger instance
         private readonly ILogger<AccountController> _logger;
-
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly RoleManager<IdentityRole<Guid>> _roleManager;
@@ -53,7 +51,7 @@ namespace BlazorBoilerplate.Server.Controllers
 
         [AllowAnonymous]
         [ProducesResponseType(204)]
-        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
         public async Task<ApiResponse> Login(LoginDto parameters)
         {
             if (!ModelState.IsValid)
@@ -61,41 +59,43 @@ namespace BlazorBoilerplate.Server.Controllers
                 return new ApiResponse(400, "User Model is Invalid");
             }
 
-            var user = await _userManager.FindByEmailAsync(parameters.UserName)
-                       ?? await _userManager.FindByNameAsync(parameters.UserName);
-
-            if (!user.EmailConfirmed && Convert.ToBoolean(_configuration["BlazorBoilerplate:RequireConfirmedEmail"] ?? "false"))
+            try
             {
-                return new ApiResponse(401, "User has not confirmed their email.");
+                var result = await _signInManager.PasswordSignInAsync(parameters.UserName, parameters.Password,  parameters.RememberMe, true);
+
+                // If lock out activated and the max. amounts of attempts is reached.
+                if (result.IsLockedOut)
+                {
+                    _logger.LogInformation("User Locked out: {0}", parameters.UserName);
+                    return new ApiResponse(401, "User is locked out!");
+                }
+
+                // If your email is not confirmed but you require it in the settings for login.
+                if (result.IsNotAllowed)
+                {
+                    _logger.LogInformation("User not allowed to log in: {0}", parameters.UserName);
+                    return new ApiResponse(401, "Login not allowed!");
+                }
+
+                if (result.Succeeded)
+                {
+                    _logger.LogInformation("Logged In: {0}", parameters.UserName);
+                    return new ApiResponse(200, "Login Successful");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInformation("Login Failed: " + ex.Message);
             }
 
-            if (user == null)
-            {
-                _logger.LogInformation("User does not exist: {0}", parameters.UserName);
-                return new ApiResponse(404, "User does not exist");
-            }
-
-            var singInResult = await _signInManager.CheckPasswordSignInAsync(user, parameters.Password, false);
-
-            if (!singInResult.Succeeded)
-            {
-                _logger.LogInformation("Invalid password: {0}, {1}", parameters.UserName, parameters.Password);
-                return new ApiResponse(400, "Invalid password");
-            }
-
-            _logger.LogInformation("Logged In: {0}, {1}", parameters.UserName, parameters.Password);
-
-            // add custom claims here, before signin if needed
-            //var claims = await _userManager.GetClaimsAsync(user);
-            //await _userManager.RemoveClaimsAsync(user, claims);
-            user.SecurityStamp = Guid.NewGuid().ToString();
-            await _signInManager.SignInAsync(user, parameters.RememberMe);
-            return new ApiResponse(200, "Login Successful");
+            _logger.LogInformation("Invalid Password for user {0}}", parameters.UserName);
+            return new ApiResponse(401, "Login Failed");
         }
 
-        [AllowAnonymous]
+
         // POST: api/Account/Register
         [HttpPost("Register")]
+        [AllowAnonymous]
         public async Task<ApiResponse> Register(RegisterDto parameters)
         {
             try
@@ -117,7 +117,16 @@ namespace BlazorBoilerplate.Server.Controllers
                 {
                     return new ApiResponse(400, "Register User Failed: " + result.Errors.FirstOrDefault()?.Description);
                 }
-                
+                else
+                {
+                    var claimsResult = _userManager.AddClaimsAsync(user, new Claim[]{
+                        new Claim(Policies.IsUser,""),
+                        new Claim(JwtClaimTypes.Name, parameters.UserName),
+                        new Claim(JwtClaimTypes.Email, parameters.Email),
+                        new Claim(JwtClaimTypes.EmailVerified, "false", ClaimValueTypes.Boolean)
+                    }).Result;
+                }
+
                 //Role - Here we tie the new user to the "User" role
                 await _userManager.AddToRoleAsync(user, "User");
 
@@ -175,9 +184,9 @@ namespace BlazorBoilerplate.Server.Controllers
             }
         }
 
-        [AllowAnonymous]
         // POST: api/Account/ConfirmEmail
         [HttpPost("ConfirmEmail")]
+        [AllowAnonymous]
         public async Task<ApiResponse> ConfirmEmail(ConfirmEmailDto parameters)
         {
             if (!ModelState.IsValid)
@@ -210,9 +219,10 @@ namespace BlazorBoilerplate.Server.Controllers
             return new ApiResponse(200, "Success");
         }
 
-        [AllowAnonymous]
+
         // POST: api/Account/ForgotPassword
         [HttpPost("ForgotPassword")]
+        [AllowAnonymous]
         public async Task<ApiResponse> ForgotPassword(ForgotPasswordDto parameters)
         {
             if (!ModelState.IsValid)
@@ -251,9 +261,9 @@ namespace BlazorBoilerplate.Server.Controllers
             return new ApiResponse(200, "Success");
         }
 
-        [AllowAnonymous]
         // PUT: api/Account/ResetPassword
         [HttpPost("ResetPassword")]
+        [AllowAnonymous]
         public async Task<ApiResponse> ResetPassword(ResetPasswordDto parameters)
         {
             if (!ModelState.IsValid)
@@ -300,17 +310,17 @@ namespace BlazorBoilerplate.Server.Controllers
             #endregion
         }
 
-        [Authorize]
         // POST: api/Account/Logout
         [HttpPost("Logout")]
+        [Authorize]
         public async Task<ApiResponse> Logout()
         {
             await _signInManager.SignOutAsync();
             return new ApiResponse(200, "Logout Successful");
         }
 
-        //[Authorize]
         [HttpGet("UserInfo")]
+        [Authorize]
         [ProducesResponseType(200)]
         [ProducesResponseType(401)]
         public async Task<ApiResponse> UserInfo()
@@ -323,24 +333,40 @@ namespace BlazorBoilerplate.Server.Controllers
         {
             var user = await _userManager.GetUserAsync(User);
 
-            return new UserInfoDto
+            if (user != null)
             {
-                IsAuthenticated = User.Identity.IsAuthenticated,
-                UserName = User.Identity.Name,
-                Email = user.Email,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                //Optionally: filter the claims you want to expose to the client
-                ExposedClaims = User.Claims.Select(c => new KeyValuePair<string, string>(c.Type, c.Value)).ToList(),
-                Roles = ((ClaimsIdentity)User.Identity).Claims
-                        .Where(c => c.Type == ClaimTypes.Role)
-                        .Select(c => c.Value).ToList()
-            };
+                try
+                {
+                    return new UserInfoDto
+                    {
+                        IsAuthenticated = User.Identity.IsAuthenticated,
+                        UserName = user.UserName,
+                        Email = user.Email,
+                        FirstName = user.FirstName,
+                        LastName = user.LastName,
+                        //Optionally: filter the claims you want to expose to the client
+                        ExposedClaims = User.Claims.Select(c => new KeyValuePair<string, string>(c.Type, c.Value)).ToList(),
+                        Roles = ((ClaimsIdentity)User.Identity).Claims
+                                .Where(c => c.Type == ClaimTypes.Role)
+                                .Select(c => c.Value).ToList()
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Could not build UserInfoDto: " + ex.Message);
+                }
+            }
+            else
+            {
+                return new UserInfoDto();
+            }
+
+            return null;
         }
 
-        [AllowAnonymous]
         // DELETE: api/Account/5
         [HttpPost("UpdateUser")]
+        [Authorize]
         public async Task<ApiResponse> UpdateUser(UserInfoDto userInfo)
         {
             if (!ModelState.IsValid)
@@ -369,13 +395,13 @@ namespace BlazorBoilerplate.Server.Controllers
 
             return new ApiResponse(200, "User Updated Successfully");
         }
-        
+
 
         ///----------Admin User Management Interface Methods
-        
-        [Authorize(Policy = Policies.IsAdmin)]
+
         // POST: api/Account/Create
         [HttpPost("Create")]
+        [Authorize]
         public async Task<ApiResponse> Create(RegisterDto parameters)
         {
             try
@@ -397,9 +423,18 @@ namespace BlazorBoilerplate.Server.Controllers
                 {
                     return new ApiResponse(400, "Register User Failed: " + result.Errors.FirstOrDefault()?.Description);
                 }
+                else
+                {
+                   var claimsResult = _userManager.AddClaimsAsync(user, new Claim[]{
+                        new Claim(Policies.IsUser,""),
+                        new Claim(JwtClaimTypes.Name, parameters.UserName),
+                        new Claim(JwtClaimTypes.Email, parameters.Email),
+                        new Claim(JwtClaimTypes.EmailVerified, "false", ClaimValueTypes.Boolean)
+                    }).Result;
+                }
 
-                //Role - Here we tie the new user to the "Admin" role
-                await _userManager.AddToRoleAsync(user, "Admin");
+                //Role - Here we tie the new user to the "User" role
+                await _userManager.AddToRoleAsync(user, "User");
 
                 if (Convert.ToBoolean(_configuration["BlazorBoilerplate:RequireConfirmedEmail"] ?? "false"))
                 {
@@ -461,9 +496,9 @@ namespace BlazorBoilerplate.Server.Controllers
             }
         }
 
-        [Authorize(Policy = Policies.IsAdmin)]
         // DELETE: api/Account/5
         [HttpDelete("{id}")]
+        [Authorize(Policy = Policies.IsAdmin)]
         public async Task<ApiResponse> Delete(string id)
         {
             var user = await _userManager.FindByIdAsync(id);
@@ -486,10 +521,11 @@ namespace BlazorBoilerplate.Server.Controllers
             }
             catch
             {
-                return new ApiResponse(400, "User Deletion Failed");                
-            }            
+                return new ApiResponse(400, "User Deletion Failed");
+            }
         }
-        
+
+
         [HttpGet("GetUser")]
         [Authorize]
         public ApiResponse GetUser()
@@ -500,18 +536,13 @@ namespace BlazorBoilerplate.Server.Controllers
             return new ApiResponse(200, "Get User Successful", userInfo);
         }
 
-        [Authorize(Policy = Policies.IsAdmin)]
-        [HttpGet]
-        public async Task<ApiResponse> Get([FromQuery] int pageSize, [FromQuery] int pageNumber = 0)
-        {
 
+        [HttpGet]
+        [Authorize]
+        public async Task<ApiResponse> Get([FromQuery] int pageSize = 10, [FromQuery] int pageNumber = 0)
+        {
             var userDtoList = new List<UserInfoDto>();
             List<ApplicationUser> listResponse;
-
-            if (pageSize == null || pageSize == 0)
-            {
-                return new ApiResponse(400, "page size input empty");
-            }
 
             // get paginated list of users
             try
@@ -550,26 +581,32 @@ namespace BlazorBoilerplate.Server.Controllers
         }
 
         [HttpGet("ListRoles")]
-        [Authorize(Policy = Policies.IsAdmin)]
+        [Authorize]
         public async Task<ApiResponse> ListRoles()
         {
             var roleList = _roleManager.Roles.Select(x => x.Name).ToList();
             return new ApiResponse(200, "", roleList);
         }
 
-        [HttpPost]
+        [HttpPut]
         [Authorize(Policy = Policies.IsAdmin)]
+        // PUT: api/Account/5
         public async Task<ApiResponse> Update([FromBody] UserInfoDto userInfo)
         {
+            if (!ModelState.IsValid)
+            {
+                return new ApiResponse(400, "User Model is Invalid");
+            }
+
             // retrieve full user object for updating
             var appUser = await _userManager.FindByIdAsync(userInfo.UserId.ToString()).ConfigureAwait(true);
-            
+
             //update values
             appUser.UserName = userInfo.UserName;
             appUser.FirstName = userInfo.FirstName;
             appUser.LastName = userInfo.LastName;
             appUser.Email = userInfo.Email;
-                                          
+
             try
             {
                 var result = await _userManager.UpdateAsync(appUser).ConfigureAwait(true);
@@ -594,6 +631,12 @@ namespace BlazorBoilerplate.Server.Controllers
                         }
                     }
                     await _userManager.AddToRolesAsync(appUser, rolesToAdd).ConfigureAwait(true);
+                    //HACK to switch to claims auth
+                    foreach (var role in rolesToAdd)
+                    {
+                        await _userManager.AddClaimAsync(appUser, new Claim($"Is{role}", "true")).ConfigureAwait(true);
+
+                    }
 
                     foreach (var role in currentUserRoles)
                     {
@@ -603,6 +646,12 @@ namespace BlazorBoilerplate.Server.Controllers
                         }
                     }
                     await _userManager.RemoveFromRolesAsync(appUser, rolesToRemove).ConfigureAwait(true);
+
+                    //HACK to switch to claims auth
+                    foreach (var role in rolesToRemove)
+                    {
+                        await _userManager.RemoveClaimAsync(appUser, new Claim($"Is{role}", "true")).ConfigureAwait(true);
+                    }
                 }
                 catch
                 {
@@ -614,7 +663,7 @@ namespace BlazorBoilerplate.Server.Controllers
 
         [HttpPost("AddUserRoleGlobal")]
         [Authorize(Policy = Policies.IsAdmin)]
-        public async Task<ApiResponse> AddUserRoletoAppAsync([FromBody] string newRole)
+        public async Task<ApiResponse> AddUserRoleToAppAsync([FromBody] string newRole)
         {
             // first make sure the role doesn't already exist
             if (_roleManager.Roles.Any(r => r.Name == newRole))
@@ -680,7 +729,7 @@ namespace BlazorBoilerplate.Server.Controllers
                         {
                             resultErrorsString += identityError.Description + ", ";
                         }
-                        resultErrorsString.TrimEnd(',');                        
+                        resultErrorsString.TrimEnd(',');
                         return new ApiResponse(400, resultErrorsString);
                     }
                     else
@@ -693,7 +742,7 @@ namespace BlazorBoilerplate.Server.Controllers
             {
                 _logger.LogInformation(user.UserName + "'s password reset failed; Requested from Admin interface by:" + User.Identity.Name);
                 return new ApiResponse(400, ex.Message);
-            }            
+            }
         }
     }
 }
