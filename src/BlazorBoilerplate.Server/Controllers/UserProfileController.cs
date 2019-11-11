@@ -8,6 +8,7 @@ using BlazorBoilerplate.Shared.Dto;
 using BlazorBoilerplate.Server.Middleware.Wrappers;
 using Microsoft.AspNetCore.Http;
 using IdentityModel;
+using AutoWrapper.Filters;
 
 namespace BlazorBoilerplate.Server.Controllers
 {
@@ -29,6 +30,7 @@ namespace BlazorBoilerplate.Server.Controllers
 
         // GET: api/UserProfile
         [HttpGet("Get")]
+        [AutoWrapIgnore]
         public async Task<ApiResponse> Get()
         {
             Guid userId = new Guid(_httpContextAccessor.HttpContext.User.FindFirst(JwtClaimTypes.Subject).Value);
@@ -37,6 +39,7 @@ namespace BlazorBoilerplate.Server.Controllers
 
         // POST: api/UserProfile
         [HttpPost("Upsert")]
+        [AutoWrapIgnore]
         public async Task<ApiResponse> Upsert(UserProfileDto userProfile)
         {
             if (!ModelState.IsValid)

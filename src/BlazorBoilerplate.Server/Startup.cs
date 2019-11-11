@@ -1,4 +1,5 @@
 using AutoMapper;
+using AutoWrapper;
 using BlazorBoilerplate.Server.Authorization;
 using BlazorBoilerplate.Server.Data;
 using BlazorBoilerplate.Server.Data.Interfaces;
@@ -297,7 +298,7 @@ namespace BlazorBoilerplate.Server
             app.UseMiddleware<UserSessionMiddleware>();
             // A REST API global exception handler and response wrapper for a consistent API
             // Configure API Loggin in appsettings.json - Logs most API calls. Great for debugging and user activity audits
-            app.UseMiddleware<APIResponseRequestLoggingMiddleware>(Convert.ToBoolean(Configuration["BlazorBoilerplate:EnableAPILogging:Enabled"] ?? "true"));
+            //app.UseMiddleware<APIResponseRequestLoggingMiddleware>(Convert.ToBoolean(Configuration["BlazorBoilerplate:EnableAPILogging:Enabled"] ?? "true"));
 
             if (env.IsDevelopment())
             {
@@ -314,6 +315,10 @@ namespace BlazorBoilerplate.Server
             app.UseClientSideBlazorFiles<Client.Startup>();
 
             app.UseHttpsRedirection();
+
+            // Add AutoWrapper to the pipeline
+            app.UseApiResponseAndExceptionWrapper(new AutoWrapperOptions { ShowStatusCode = true });
+
             app.UseRouting();
             //app.UseAuthentication();
             app.UseIdentityServer();
